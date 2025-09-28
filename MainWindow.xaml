@@ -101,27 +101,44 @@
             </StackPanel>
         </GroupBox>
         
-        <!-- PowerShell Script Section -->
-        <GroupBox Grid.Row="3" Header="PowerShell Script" Margin="0,0,0,15">
+        <!-- Python Environment Setup Section -->
+        <GroupBox Grid.Row="3" Header="Python Environment Setup" Margin="0,0,0,15">
             <StackPanel Margin="10">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
                     
-                    <TextBlock Grid.Column="0" Text="Script Path:" 
-                               VerticalAlignment="Center" Margin="0,0,10,0"/>
-                    <TextBox Grid.Column="1" x:Name="ScriptPathTextBox" 
-                             Margin="0,0,10,0" 
-                             Text="C:\Projects\install.ps1"
-                             TextChanged="ScriptPathTextBox_TextChanged"/>
-                    <Button Grid.Column="2" Content="Browse..." 
-                            Click="BrowseScriptPath_Click" Margin="0,0,10,0"/>
-                    <Button Grid.Column="3" x:Name="RunScriptButton" 
-                            Content="Run Script" Click="RunScriptButton_Click"/>
+                    <CheckBox Grid.Row="0" Grid.Column="0" x:Name="CreateVenvCheckBox" 
+                              Content="Create Python virtual environment" 
+                              IsChecked="True" Margin="0,0,10,5"/>
+                    <CheckBox Grid.Row="1" Grid.Column="0" x:Name="InstallPackagesCheckBox" 
+                              Content="Install required packages" 
+                              IsChecked="True" Margin="0,0,10,5"/>
+                    <CheckBox Grid.Row="2" Grid.Column="0" x:Name="CreateDesktopShortcutCheckBox" 
+                              Content="Create desktop shortcut for target program" 
+                              IsChecked="True" Margin="0,0,10,5"/>
+                    
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Target Program:" 
+                               VerticalAlignment="Center" Margin="0,5,10,5"/>
+                    <TextBox Grid.Row="3" Grid.Column="1" x:Name="TargetProgramTextBox" 
+                             Text="astrofiler.py" Margin="0,5,10,5" MinWidth="200"
+                             ToolTip="Specify the Python program to run (e.g., astrofiler.py, main.py)"
+                             TextChanged="TargetProgramTextBox_TextChanged"/>
+                    
+                    <Button Grid.Row="0" Grid.Column="2" x:Name="SetupEnvironmentButton" 
+                            Content="Setup Environment" Click="SetupEnvironmentButton_Click" 
+                            Margin="0,0,10,0"/>
+                    <Button Grid.Row="1" Grid.Column="2" x:Name="CreateRunScriptsButton" 
+                            Content="Create Run Scripts" Click="CreateRunScriptsButton_Click"/>
                 </Grid>
             </StackPanel>
         </GroupBox>
@@ -143,7 +160,7 @@
         <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right">
             <ProgressBar x:Name="ProgressBar" Width="200" Height="20" 
                          Margin="0,0,15,0" Visibility="Collapsed"/>
-            <Button x:Name="InstallAllButton" Content="Install All" 
+            <Button x:Name="InstallAllButton" Content="Complete Setup" 
                     Click="InstallAllButton_Click" Padding="15,5" 
                     FontWeight="Bold"/>
         </StackPanel>

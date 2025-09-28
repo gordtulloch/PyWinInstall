@@ -9,6 +9,7 @@ using LibGit2Sharp;
 using Microsoft.Win32;
 using System.Text;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 
 namespace PyWinInstall
 {
@@ -29,7 +30,7 @@ namespace PyWinInstall
             // Load configuration
             LoadConfiguration();
             
-            LogOutput("PyWinInstall ready. Select options and click 'Install All' or use individual buttons.");
+            LogOutput("PyWinInstall ready. Select options and click 'Complete Setup' or use individual buttons.");
             
             // Check for existing Python installation on startup
             if (config?.DefaultSettings?.Application?.AutoDetectPython == true)
@@ -77,15 +78,18 @@ namespace PyWinInstall
             RepoUrlTextBox.Text = config.DefaultSettings.Git.RepositoryUrl;
             ClonePathTextBox.Text = config.DefaultSettings.Git.ClonePath;
 
-            // Apply PowerShell settings
-            ScriptPathTextBox.Text = config.DefaultSettings.PowerShell.ScriptPath;
-
             // Apply Python already installed setting
             PythonAlreadyInstalledCheckBox.IsChecked = config.DefaultSettings.Python.AlreadyInstalled;
             if (config.DefaultSettings.Python.AlreadyInstalled)
             {
                 UpdatePythonSectionState(false);
             }
+
+            // Apply desktop shortcut setting
+            CreateDesktopShortcutCheckBox.IsChecked = config.DefaultSettings.Application.CreateDesktopShortcut;
+            
+            // Apply target program setting
+            TargetProgramTextBox.Text = config.DefaultSettings.Application.TargetProgram;
         }
 
         private void CheckForExistingPython()
@@ -135,7 +139,8 @@ namespace PyWinInstall
 
                 config.DefaultSettings.Git.RepositoryUrl = RepoUrlTextBox.Text;
                 config.DefaultSettings.Git.ClonePath = ClonePathTextBox.Text;
-                config.DefaultSettings.PowerShell.ScriptPath = ScriptPathTextBox.Text;
+                config.DefaultSettings.Application.CreateDesktopShortcut = CreateDesktopShortcutCheckBox.IsChecked ?? true;
+                config.DefaultSettings.Application.TargetProgram = TargetProgramTextBox.Text;
 
                 config.Save();
                 LogOutput("Settings saved to setup.json");
@@ -177,7 +182,7 @@ namespace PyWinInstall
                 SaveCurrentSettings();
         }
 
-        private void ScriptPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        private void TargetProgramTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (config != null && !isInitializing)
                 SaveCurrentSettings();
@@ -550,20 +555,6 @@ namespace PyWinInstall
                         
                         LogOutput($"Repository cloned successfully to {fullClonePath}");
                         SetProgress(true, 100);
-                        
-                        // Update script path if it's in the default location
-                        Dispatcher.Invoke(() =>
-                        {
-                            if (ScriptPathTextBox.Text.Contains("install.ps1"))
-                            {
-                                string possibleScriptPath = Path.Combine(fullClonePath, "install.ps1");
-                                if (File.Exists(possibleScriptPath))
-                                {
-                                    ScriptPathTextBox.Text = possibleScriptPath;
-                                    LogOutput($"Found install.ps1 script at {possibleScriptPath}");
-                                }
-                            }
-                        });
                     }
                     catch (Exception ex)
                     {
@@ -585,114 +576,60 @@ namespace PyWinInstall
             }
         }
 
-        private async void RunScriptButton_Click(object sender, RoutedEventArgs e)
+        private async void SetupEnvironmentButton_Click(object sender, RoutedEventArgs e)
         {
-            await RunPowerShellScript();
+            await SetupPythonEnvironment();
         }
 
-        private async Task<bool> RunPowerShellScript()
+        private async Task<bool> SetupPythonEnvironment()
         {
             try
             {
                 SetProgress(true, 0);
-                LogOutput("Starting PowerShell script execution...");
+                LogOutput("Starting Python environment setup...");
 
-                string scriptPath = ScriptPathTextBox.Text.Trim();
-
-                if (string.IsNullOrEmpty(scriptPath) || !File.Exists(scriptPath))
+                string projectPath = ClonePathTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(projectPath))
                 {
-                    LogOutput("ERROR: Please specify a valid PowerShell script path.");
+                    LogOutput("ERROR: Please specify a project directory.");
+                    return false;
+                }
+
+                // Extract repository name from URL for the project directory
+                string repoUrl = RepoUrlTextBox.Text.Trim();
+                string repoName = Path.GetFileNameWithoutExtension(repoUrl.Split('/').Last());
+                string fullProjectPath = Path.Combine(projectPath, repoName);
+
+                if (!Directory.Exists(fullProjectPath))
+                {
+                    LogOutput($"ERROR: Project directory does not exist: {fullProjectPath}");
+                    LogOutput("Please clone the repository first.");
                     return false;
                 }
 
                 SetProgress(true, 25);
 
-                bool success = await Task.Run(() =>
+                // Check if virtual environment should be created
+                if (CreateVenvCheckBox.IsChecked == true)
                 {
-                    try
-                    {
-                        LogOutput($"Executing PowerShell script: {scriptPath}");
+                    await CreateVirtualEnvironment(fullProjectPath);
+                }
 
-                        // Use PowerShell.exe directly instead of the managed API
-                        var startInfo = new ProcessStartInfo
-                        {
-                            FileName = "powershell.exe",
-                            Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"",
-                            UseShellExecute = false,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            CreateNoWindow = true,
-                            WorkingDirectory = Path.GetDirectoryName(scriptPath) ?? Environment.CurrentDirectory
-                        };
+                SetProgress(true, 60);
 
-                        using (var process = Process.Start(startInfo))
-                        {
-                            if (process != null)
-                            {
-                                SetProgress(true, 50);
+                // Install packages if requested
+                if (InstallPackagesCheckBox.IsChecked == true)
+                {
+                    await InstallPythonPackages(fullProjectPath);
+                }
 
-                                // Read output and error streams
-                                string output = process.StandardOutput.ReadToEnd();
-                                string error = process.StandardError.ReadToEnd();
-                                
-                                process.WaitForExit();
-
-                                SetProgress(true, 75);
-
-                                // Log output
-                                if (!string.IsNullOrEmpty(output))
-                                {
-                                    LogOutput("SCRIPT OUTPUT:");
-                                    foreach (string line in output.Split('\n'))
-                                    {
-                                        if (!string.IsNullOrWhiteSpace(line))
-                                        {
-                                            LogOutput($"  {line.TrimEnd()}");
-                                        }
-                                    }
-                                }
-
-                                // Log errors
-                                if (!string.IsNullOrEmpty(error))
-                                {
-                                    LogOutput("SCRIPT ERRORS:");
-                                    foreach (string line in error.Split('\n'))
-                                    {
-                                        if (!string.IsNullOrWhiteSpace(line))
-                                        {
-                                            LogOutput($"  ERROR: {line.TrimEnd()}");
-                                        }
-                                    }
-                                }
-
-                                if (process.ExitCode == 0)
-                                {
-                                    LogOutput("PowerShell script execution completed successfully.");
-                                    SetProgress(true, 100);
-                                    return true;
-                                }
-                                else
-                                {
-                                    LogOutput($"PowerShell script execution failed with exit code: {process.ExitCode}");
-                                    return false;
-                                }
-                            }
-                        }
-
-                        return false;
-                    }
-                    catch (Exception ex)
-                    {
-                        LogOutput($"ERROR during PowerShell script execution: {ex.Message}");
-                        return false;
-                    }
-                });
-
-                return success;
+                SetProgress(true, 100);
+                LogOutput("Python environment setup completed successfully!");
+                return true;
             }
             catch (Exception ex)
             {
-                LogOutput($"ERROR during PowerShell script execution: {ex.Message}");
+                LogOutput($"ERROR during Python environment setup: {ex.Message}");
                 return false;
             }
             finally
@@ -701,9 +638,285 @@ namespace PyWinInstall
             }
         }
 
+        private async Task<bool> CreateVirtualEnvironment(string projectPath)
+        {
+            try
+            {
+                LogOutput("Creating virtual environment...");
+                
+                string venvPath = Path.Combine(projectPath, ".venv");
+                
+                // Remove existing venv if it exists
+                if (Directory.Exists(venvPath))
+                {
+                    LogOutput("Removing existing virtual environment...");
+                    Directory.Delete(venvPath, true);
+                }
+
+                await Task.Run(() =>
+                {
+                    var startInfo = new ProcessStartInfo
+                    {
+                        FileName = "python",
+                        Arguments = "-m venv .venv",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true,
+                        WorkingDirectory = projectPath
+                    };
+
+                    using (var process = Process.Start(startInfo))
+                    {
+                        if (process != null)
+                        {
+                            string output = process.StandardOutput.ReadToEnd();
+                            string error = process.StandardError.ReadToEnd();
+                            
+                            process.WaitForExit();
+
+                            if (process.ExitCode == 0)
+                            {
+                                LogOutput("Virtual environment created successfully.");
+                                return true;
+                            }
+                            else
+                            {
+                                LogOutput($"ERROR creating virtual environment: {error}");
+                                return false;
+                            }
+                        }
+                    }
+                    return false;
+                });
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogOutput($"ERROR creating virtual environment: {ex.Message}");
+                return false;
+            }
+        }
+
+        private async Task<bool> InstallPythonPackages(string projectPath)
+        {
+            try
+            {
+                LogOutput("Installing Python packages...");
+                SetProgress(true, 0);
+
+                string venvPython = Path.Combine(projectPath, ".venv", "Scripts", "python.exe");
+                
+                if (!File.Exists(venvPython))
+                {
+                    LogOutput("ERROR: Virtual environment not found. Please create it first.");
+                    SetProgress(false);
+                    return false;
+                }
+
+                // Upgrade pip first
+                LogOutput("Upgrading pip...");
+                SetProgress(true, 10);
+                bool pipUpgradeSuccess = await RunPipCommandWithLiveOutput(venvPython, "-m pip install --upgrade pip", projectPath);
+                
+                if (!pipUpgradeSuccess)
+                {
+                    LogOutput("Warning: Failed to upgrade pip, but continuing...");
+                }
+
+                // Check for requirements.txt
+                string requirementsPath = Path.Combine(projectPath, "requirements.txt");
+                
+                if (File.Exists(requirementsPath))
+                {
+                    LogOutput("Installing packages from requirements.txt...");
+                    SetProgress(true, 30);
+                    bool reqSuccess = await RunPipCommandWithLiveOutput(venvPython, "-m pip install -r requirements.txt", projectPath);
+                    
+                    if (!reqSuccess)
+                    {
+                        LogOutput("ERROR: Failed to install packages from requirements.txt");
+                        SetProgress(false);
+                        return false;
+                    }
+                    SetProgress(true, 90);
+                }
+                else
+                {
+                    LogOutput("No requirements.txt found. Installing common packages...");
+                    string[] packages = { "astropy", "peewee", "numpy", "matplotlib", "pytz", "PySide6" };
+                    
+                    for (int i = 0; i < packages.Length; i++)
+                    {
+                        string package = packages[i];
+                        LogOutput($"Installing {package}...");
+                        SetProgress(true, 30 + (50 * (i + 1) / packages.Length)); // Progress from 30% to 80%
+                        
+                        bool packageSuccess = await RunPipCommandWithLiveOutput(venvPython, $"-m pip install {package}", projectPath);
+                        
+                        if (!packageSuccess)
+                        {
+                            LogOutput($"Warning: Failed to install {package}, but continuing...");
+                        }
+                    }
+                }
+
+                LogOutput("Package installation completed.");
+                SetProgress(true, 100);
+                await Task.Delay(1000); // Show 100% briefly
+                SetProgress(false);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogOutput($"ERROR installing packages: {ex.Message}");
+                SetProgress(false);
+                return false;
+            }
+        }
+
+        private async Task<bool> RunPipCommandWithLiveOutput(string pythonPath, string arguments, string workingDirectory)
+        {
+            try
+            {
+                var processInfo = new ProcessStartInfo
+                {
+                    FileName = pythonPath,
+                    Arguments = arguments,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    WorkingDirectory = workingDirectory
+                };
+
+                using (var process = Process.Start(processInfo))
+                {
+                    if (process == null) return false;
+
+                    // Read output in real-time
+                    var outputTask = Task.Run(async () =>
+                    {
+                        while (!process.StandardOutput.EndOfStream)
+                        {
+                            string? line = await process.StandardOutput.ReadLineAsync();
+                            if (!string.IsNullOrWhiteSpace(line))
+                            {
+                                // Filter and format pip output for better readability
+                                if (line.Contains("Collecting") || 
+                                    line.Contains("Downloading") || 
+                                    line.Contains("Installing") ||
+                                    line.Contains("Successfully installed") ||
+                                    line.Contains("Requirement already satisfied") ||
+                                    line.Contains("Using cached"))
+                                {
+                                    // Use Dispatcher to update UI from background thread
+                                    Dispatcher.Invoke(() => LogOutput($"  {line.Trim()}"));
+                                }
+                                else if (line.Contains("ERROR") || line.Contains("Error"))
+                                {
+                                    Dispatcher.Invoke(() => LogOutput($"  ERROR: {line.Trim()}"));
+                                }
+                            }
+                        }
+                    });
+
+                    var errorTask = Task.Run(async () =>
+                    {
+                        while (!process.StandardError.EndOfStream)
+                        {
+                            string? line = await process.StandardError.ReadLineAsync();
+                            if (!string.IsNullOrWhiteSpace(line))
+                            {
+                                // Use Dispatcher to update UI from background thread
+                                Dispatcher.Invoke(() => LogOutput($"  WARNING: {line.Trim()}"));
+                            }
+                        }
+                    });
+
+                    // Wait for process to complete
+                    await process.WaitForExitAsync();
+                    
+                    // Wait for all output to be read
+                    await Task.WhenAll(outputTask, errorTask);
+
+                    return process.ExitCode == 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogOutput($"ERROR running pip command: {ex.Message}");
+                return false;
+            }
+        }
+
+        private async void CreateRunScriptsButton_Click(object sender, RoutedEventArgs e)
+        {
+            await CreateRunScripts();
+        }
+
+        private async Task<bool> CreateRunScripts()
+        {
+            try
+            {
+                LogOutput("Creating run scripts...");
+
+                string projectPath = ClonePathTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(projectPath))
+                {
+                    LogOutput("ERROR: Please specify a project directory.");
+                    return false;
+                }
+
+                // Extract repository name from URL for the project directory
+                string repoUrl = RepoUrlTextBox.Text.Trim();
+                string repoName = Path.GetFileNameWithoutExtension(repoUrl.Split('/').Last());
+                string fullProjectPath = Path.Combine(projectPath, repoName);
+
+                if (!Directory.Exists(fullProjectPath))
+                {
+                    LogOutput($"ERROR: Project directory does not exist: {fullProjectPath}");
+                    return false;
+                }
+
+                await Task.Run(() =>
+                {
+                    // Create PowerShell run script
+                    string psScript = @"# AstroFiler Runner Script
+Set-Location -Path $PSScriptRoot
+& "".\\.venv\\Scripts\\Activate.ps1""
+python astrofiler.py
+Read-Host ""Press Enter to exit""";
+
+                    File.WriteAllText(Path.Combine(fullProjectPath, "run_astrofiler.ps1"), psScript);
+
+                    // Create Batch run script
+                    string batScript = @"@echo off
+cd /d ""%~dp0""
+call .venv\Scripts\activate.bat
+python astrofiler.py
+pause";
+
+                    File.WriteAllText(Path.Combine(fullProjectPath, "run_astrofiler.bat"), batScript);
+
+                    LogOutput("Run scripts created successfully:");
+                    LogOutput("  - run_astrofiler.ps1 (PowerShell)");
+                    LogOutput("  - run_astrofiler.bat (Command Prompt)");
+                });
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogOutput($"ERROR creating run scripts: {ex.Message}");
+                return false;
+            }
+        }
+
         private async void InstallAllButton_Click(object sender, RoutedEventArgs e)
         {
-            LogOutput("Starting complete installation process...");
+            LogOutput("Starting complete setup process...");
             
             bool pythonSuccess = await InstallPython();
             if (!pythonSuccess)
@@ -719,15 +932,25 @@ namespace PyWinInstall
                 return;
             }
 
-            bool scriptSuccess = await RunPowerShellScript();
-            if (!scriptSuccess)
+            bool environmentSuccess = await SetupPythonEnvironment();
+            if (!environmentSuccess)
             {
-                LogOutput("PowerShell script execution failed.");
+                LogOutput("Python environment setup failed. Stopping process.");
                 return;
             }
 
-            LogOutput("Complete installation process finished successfully!");
-            MessageBox.Show("Installation completed successfully!", "Success", 
+            bool scriptsSuccess = await CreateRunScripts();
+            if (!scriptsSuccess)
+            {
+                LogOutput("Run script creation failed.");
+                return;
+            }
+
+            // Create desktop shortcut as the final step
+            CreateDesktopShortcut();
+
+            LogOutput("Complete setup process finished successfully!");
+            MessageBox.Show("Setup completed successfully! Your Python environment is ready to use.", "Success", 
                           MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
@@ -761,20 +984,144 @@ namespace PyWinInstall
             }
         }
 
-        private void BrowseScriptPath_Click(object sender, RoutedEventArgs e)
+        private void CreateDesktopShortcut()
         {
-            var dialog = new OpenFileDialog
+            try
             {
-                Title = "Select PowerShell Script",
-                Filter = "PowerShell Scripts (*.ps1)|*.ps1|All Files (*.*)|*.*",
-                InitialDirectory = Path.GetDirectoryName(ScriptPathTextBox.Text) ?? @"C:\"
-            };
+                if (CreateDesktopShortcutCheckBox.IsChecked != true)
+                {
+                    LogOutput("Skipping desktop shortcut creation");
+                    return;
+                }
 
-            if (dialog.ShowDialog() == true)
-            {
-                ScriptPathTextBox.Text = dialog.FileName;
-                SaveCurrentSettings(); // Explicitly save when user browses
+                string targetProgram = TargetProgramTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(targetProgram))
+                {
+                    LogOutput("Error: No target program specified for shortcut");
+                    return;
+                }
+
+                string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                string clonePath = ClonePathTextBox.Text.Trim();
+                string projectPath = Path.Combine(clonePath, Path.GetFileNameWithoutExtension(RepoUrlTextBox.Text.Split('/').Last().Replace(".git", "")));
+                string venvPython = Path.Combine(projectPath, ".venv", "Scripts", "python.exe");
+                string targetProgramPath = Path.Combine(projectPath, targetProgram);
+
+                if (!File.Exists(venvPython))
+                {
+                    LogOutput("Error: Virtual environment not found. Cannot create shortcut.");
+                    return;
+                }
+
+                if (!File.Exists(targetProgramPath))
+                {
+                    LogOutput($"Warning: Target program '{targetProgram}' not found at {targetProgramPath}. Creating shortcut anyway.");
+                }
+
+                // Create program name from target program file
+                string programName = Path.GetFileNameWithoutExtension(targetProgram);
+                string shortcutName = char.ToUpper(programName[0]) + programName.Substring(1); // Capitalize first letter
+                string shortcutPath = Path.Combine(desktopPath, $"{shortcutName}.lnk");
+
+                // Look for .ico file in the project directory
+                string iconPath = FindIconFile(projectPath, programName);
+
+                // Create a VBS script that runs the Python program without showing console
+                string vbsContent = $@"Set objShell = CreateObject(""WScript.Shell"")
+objShell.CurrentDirectory = ""{projectPath}""
+pythonPath = ""{venvPython}""
+programPath = ""{targetProgram}""
+objShell.Run pythonPath & "" "" & programPath, 0, False";
+                string vbsPath = Path.Combine(projectPath, $"run_{programName}.vbs");
+                
+                File.WriteAllText(vbsPath, vbsContent);
+
+                // Use PowerShell to create the shortcut pointing to the VBS script
+                string iconScript = !string.IsNullOrEmpty(iconPath) ? $"$Shortcut.IconLocation = '{iconPath}'" : "";
+                string powershellScript = $@"
+                    $WshShell = New-Object -comObject WScript.Shell
+                    $Shortcut = $WshShell.CreateShortcut('{shortcutPath}')
+                    $Shortcut.TargetPath = 'wscript.exe'
+                    $Shortcut.Arguments = '\""{vbsPath}\""'
+                    $Shortcut.WorkingDirectory = '{projectPath}'
+                    $Shortcut.Description = '{shortcutName} - Python Application'
+                    {iconScript}
+                    $Shortcut.Save()
+                ";
+
+                ProcessStartInfo startInfo = new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{powershellScript}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+
+                using (Process? process = Process.Start(startInfo))
+                {
+                    if (process != null)
+                    {
+                        process.WaitForExit(10000);
+                        if (process.ExitCode == 0)
+                        {
+                            LogOutput($"Desktop shortcut created: {shortcutPath}");
+                            LogOutput($"Created hidden launcher: run_{programName}.vbs");
+                            if (!string.IsNullOrEmpty(iconPath))
+                            {
+                                LogOutput($"Using icon: {iconPath}");
+                            }
+                        }
+                        else
+                        {
+                            string error = process.StandardError.ReadToEnd();
+                            LogOutput($"Failed to create desktop shortcut: {error}");
+                        }
+                    }
+                }
             }
+            catch (Exception ex)
+            {
+                LogOutput($"Error creating desktop shortcut: {ex.Message}");
+            }
+        }
+
+        private string FindIconFile(string projectPath, string programName)
+        {
+            try
+            {
+                // Look for icon files in common locations
+                string[] iconSearchPaths = {
+                    Path.Combine(projectPath, $"{programName}.ico"),
+                    Path.Combine(projectPath, "icon.ico"),
+                    Path.Combine(projectPath, "app.ico"),
+                    Path.Combine(projectPath, "assets", $"{programName}.ico"),
+                    Path.Combine(projectPath, "icons", $"{programName}.ico"),
+                    Path.Combine(projectPath, "resources", $"{programName}.ico")
+                };
+
+                foreach (string iconPath in iconSearchPaths)
+                {
+                    if (File.Exists(iconPath))
+                    {
+                        return iconPath;
+                    }
+                }
+
+                // Look for any .ico file in the project directory
+                var icoFiles = Directory.GetFiles(projectPath, "*.ico", SearchOption.AllDirectories);
+                if (icoFiles.Length > 0)
+                {
+                    return icoFiles[0]; // Return the first .ico file found
+                }
+            }
+            catch (Exception ex)
+            {
+                LogOutput($"Warning: Error searching for icon file: {ex.Message}");
+            }
+
+            return string.Empty;
         }
 
         protected override void OnClosed(EventArgs e)

@@ -45,7 +45,6 @@ namespace PyWinInstall
     {
         public PythonSettings Python { get; set; } = new PythonSettings();
         public GitSettings Git { get; set; } = new GitSettings();
-        public PowerShellSettings PowerShell { get; set; } = new PowerShellSettings();
         public ApplicationSettings Application { get; set; } = new ApplicationSettings();
     }
 
@@ -62,15 +61,11 @@ namespace PyWinInstall
         public string ClonePath { get; set; } = "C:\\";
     }
 
-    public class PowerShellSettings
-    {
-        public string ScriptPath { get; set; } = "C:\\astrofiler-gui\\install\\install.ps1";
-    }
-
     public class ApplicationSettings
     {
         public bool AutoDetectPython { get; set; } = true;
-        public bool CreateDesktopShortcut { get; set; } = false;
+        public bool CreateDesktopShortcut { get; set; } = true;
         public bool AddPythonToPath { get; set; } = true;
+        public string TargetProgram { get; set; } = "astrofiler.py";
     }
 }
