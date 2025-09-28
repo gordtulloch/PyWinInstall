@@ -1,14 +1,16 @@
 # PyWinInstall - Python Environment Installer
 
-A Windows WPF application that automates the installation of Python, cloning of Git repositories, and execution of PowerShell installer scripts.
+A Windows WPF application that automates the installation of Python, cloning of Git repositories, and setting up Python virtual environments with package installation.
 
 ## Features
 
 - **Python Installation**: Downloads and installs specified Python versions from python.org
 - **Git Repository Cloning**: Clones repositories using LibGit2Sharp
-- **PowerShell Script Execution**: Runs installation scripts with proper execution policy handling
-- **User-Friendly Interface**: Clean WPF interface with progress tracking and output logging
-- **Automated Workflow**: "Install All" button for complete automation
+- **Virtual Environment Setup**: Creates Python virtual environments automatically
+- **Package Installation**: Installs packages from requirements.txt or common packages
+- **Desktop Shortcuts**: Creates desktop shortcuts for Python applications with custom icons
+- **User-Friendly Interface**: Clean WPF interface with real-time progress tracking and output logging
+- **Automated Workflow**: "Complete Setup" button for fully automated installation
 
 ## Requirements
 
@@ -47,41 +49,62 @@ A Windows WPF application that automates the installation of Python, cloning of 
    - Click "Install Python"
 
 2. **Clone Repository**:
+2. **Clone Repository**:
    - Enter Git repository URL
    - Select destination directory
    - Click "Clone Repository"
 
-3. **Run PowerShell Script**:
-   - Browse to or enter PowerShell script path
-   - Click "Run Script"
+3. **Setup Python Environment**:
+   - Choose to create virtual environment
+   - Select package installation options
+   - Specify target Python program (e.g., astrofiler.py)
+   - Enable desktop shortcut creation
+   - Click "Setup Environment"
 
 ### Automated Installation
 
-1. Configure all three sections with your desired settings
-2. Click "Install All" to run the complete process automatically
+1. Configure Python installation, Git repository, and environment setup options
+2. Click "Complete Setup" to run the entire process automatically
 
 ## Configuration Options
 
 ### Python Installation
-- **Version**: Choose from supported Python versions
+- **Version**: Choose from supported Python versions (3.9.19 to 3.12.6)
 - **Install Path**: Directory where Python will be installed (default: C:\Python)
+- **Skip Installation**: Check if Python is already installed
 
 ### Git Repository
 - **Repository URL**: Full Git repository URL (https or ssh)
 - **Clone Path**: Directory where repository will be cloned
 
-### PowerShell Script
-- **Script Path**: Path to the .ps1 installer script
-- The application automatically looks for `install.ps1` in cloned repositories
+### Python Environment Setup
+- **Create Virtual Environment**: Automatically creates .venv in the project directory
+- **Install Packages**: Installs from requirements.txt or common packages (astropy, numpy, matplotlib, etc.)
+- **Target Program**: Specify the main Python program to run (e.g., astrofiler.py)
+- **Desktop Shortcut**: Creates a desktop shortcut that runs the target program without console windows
 
-## Sample PowerShell Script
+## Package Installation
 
-The project includes `sample_install.ps1` which demonstrates:
-- Python installation verification
-- pip upgrade
-- Package installation from requirements.txt
-- Virtual environment creation
-- Setup summary generation
+The application can install packages in two ways:
+
+1. **From requirements.txt**: If found in the cloned repository, packages are installed automatically
+2. **Default packages**: If no requirements.txt is found, installs common packages:
+   - astropy
+   - peewee  
+   - numpy
+   - matplotlib
+   - pytz
+   - PySide6
+
+All installations show real-time pip output with progress indicators.
+
+## Desktop Shortcuts
+
+The application creates desktop shortcuts that:
+- Run the target Python program within the virtual environment
+- Use application icons (.ico files) if found in the project
+- Launch without showing console windows
+- Set proper working directory
 
 ## Dependencies
 
@@ -93,8 +116,6 @@ The project includes `sample_install.ps1` which demonstrates:
 ## Security Considerations
 
 - The application requires administrator privileges for Python installation
-- PowerShell execution policy is temporarily bypassed for script execution
-- Always review PowerShell scripts before execution
 - Repository cloning uses default Git credentials
 
 ## Troubleshooting
@@ -109,11 +130,6 @@ The project includes `sample_install.ps1` which demonstrates:
 - Check Git credentials for private repositories
 - Ensure destination directory has write permissions
 
-### PowerShell Script Issues
-- Verify script file exists and is accessible
-- Check script syntax using PowerShell ISE
-- Review execution policy settings
-
 ## Customization
 
 ### Adding New Python Versions
@@ -124,9 +140,6 @@ Edit the ComboBox items in `MainWindow.xaml`:
 
 ### Modifying Download URLs
 Update the `GetPythonDownloadUrl` method in `MainWindow.xaml.cs`
-
-### Custom Script Parameters
-Modify the PowerShell execution code to pass custom parameters to scripts
 
 ## License
 
