@@ -9,13 +9,11 @@
       "RepositoryUrl": "https://github.com/gordtulloch/astrofiler-gui.git",
       "ClonePath": "C:\\test\\"
     },
-    "PowerShell": {
-      "ScriptPath": "C:\\astrofiler-gui\\install\\install.ps1"
-    },
     "Application": {
       "AutoDetectPython": true,
       "CreateDesktopShortcut": false,
-      "AddPythonToPath": true
+      "AddPythonToPath": true,
+      "TargetProgram": "astrofiler.py"
     }
   }
 }

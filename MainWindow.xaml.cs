@@ -643,9 +643,9 @@ namespace PyWinInstall
             try
             {
                 LogOutput("Creating virtual environment...");
-                
+
                 string venvPath = Path.Combine(projectPath, ".venv");
-                
+
                 // Remove existing venv if it exists
                 if (Directory.Exists(venvPath))
                 {
@@ -653,11 +653,21 @@ namespace PyWinInstall
                     Directory.Delete(venvPath, true);
                 }
 
+                // Determine Python path to use
+                string pythonPath = GetPythonPath();
+                if (string.IsNullOrEmpty(pythonPath))
+                {
+                    LogOutput("ERROR: Could not find Python executable. Please ensure Python is installed.");
+                    return false;
+                }
+
+                LogOutput($"Using Python at: {pythonPath}");
+
                 await Task.Run(() =>
                 {
                     var startInfo = new ProcessStartInfo
                     {
-                        FileName = "python",
+                        FileName = pythonPath,
                         Arguments = "-m venv .venv",
                         UseShellExecute = false,
                         RedirectStandardOutput = true,
@@ -672,7 +682,7 @@ namespace PyWinInstall
                         {
                             string output = process.StandardOutput.ReadToEnd();
                             string error = process.StandardError.ReadToEnd();
-                            
+
                             process.WaitForExit();
 
                             if (process.ExitCode == 0)
@@ -697,6 +707,58 @@ namespace PyWinInstall
                 LogOutput($"ERROR creating virtual environment: {ex.Message}");
                 return false;
             }
+        }
+
+        private string GetPythonPath()
+        {
+            // First, check the configured installation path
+            string installPath = PythonPathTextBox.Text.Trim();
+            if (!string.IsNullOrEmpty(installPath))
+            {
+                string pythonExe = Path.Combine(installPath, "python.exe");
+                if (File.Exists(pythonExe))
+                {
+                    return pythonExe;
+                }
+            }
+
+            // Try to find Python in PATH
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "where",
+                    Arguments = "python",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                };
+
+                using (var process = Process.Start(startInfo))
+                {
+                    if (process != null)
+                    {
+                        string output = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+
+                        if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
+                        {
+                            // Return the first Python found in PATH
+                            string firstPath = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)[0];
+                            if (File.Exists(firstPath))
+                            {
+                                return firstPath;
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Fall through to return empty string
+            }
+
+            return string.Empty;
         }
 
         private async Task<bool> InstallPythonPackages(string projectPath)
@@ -880,29 +942,55 @@ namespace PyWinInstall
                     return false;
                 }
 
+                string targetProgram = TargetProgramTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(targetProgram))
+                {
+                    targetProgram = "main.py"; // Default fallback
+                }
+
+                string programName = Path.GetFileNameWithoutExtension(targetProgram);
+
                 await Task.Run(() =>
                 {
                     // Create PowerShell run script
-                    string psScript = @"# AstroFiler Runner Script
+                    string psScript = $@"# {programName} Runner Script
 Set-Location -Path $PSScriptRoot
+
+# Update from git repository
+Write-Host ""Checking for updates...""
+git pull
+if ($LASTEXITCODE -ne 0) {{
+    Write-Host ""Warning: Git pull failed or no git repository found"" -ForegroundColor Yellow
+}}
+
+Write-Host ""Starting {programName}...""
 & "".\\.venv\\Scripts\\Activate.ps1""
-python astrofiler.py
+python {targetProgram}
 Read-Host ""Press Enter to exit""";
 
-                    File.WriteAllText(Path.Combine(fullProjectPath, "run_astrofiler.ps1"), psScript);
+                    File.WriteAllText(Path.Combine(fullProjectPath, $"run_{programName}.ps1"), psScript);
 
                     // Create Batch run script
-                    string batScript = @"@echo off
+                    string batScript = $@"@echo off
 cd /d ""%~dp0""
+
+echo Checking for updates...
+git pull
+if errorlevel 1 (
+    echo Warning: Git pull failed or no git repository found
+)
+
+echo Starting {programName}...
 call .venv\Scripts\activate.bat
-python astrofiler.py
+python {targetProgram}
 pause";
 
-                    File.WriteAllText(Path.Combine(fullProjectPath, "run_astrofiler.bat"), batScript);
+                    File.WriteAllText(Path.Combine(fullProjectPath, $"run_{programName}.bat"), batScript);
 
                     LogOutput("Run scripts created successfully:");
-                    LogOutput("  - run_astrofiler.ps1 (PowerShell)");
-                    LogOutput("  - run_astrofiler.bat (Command Prompt)");
+                    LogOutput($"  - run_{programName}.ps1 (PowerShell)");
+                    LogOutput($"  - run_{programName}.bat (Command Prompt)");
+                    LogOutput("Scripts will check for updates via 'git pull' on startup");
                 });
 
                 return true;
@@ -1027,11 +1115,39 @@ pause";
                 string iconPath = FindIconFile(projectPath, programName);
 
                 // Create a VBS script that runs the Python program without showing console
-                string vbsContent = $@"Set objShell = CreateObject(""WScript.Shell"")
+                // Includes error handling to show messages if Python fails
+                string vbsContent = $@"On Error Resume Next
+Set objShell = CreateObject(""WScript.Shell"")
+Set objFSO = CreateObject(""Scripting.FileSystemObject"")
+
+' Set working directory
 objShell.CurrentDirectory = ""{projectPath}""
+
+' Define paths
 pythonPath = ""{venvPython}""
 programPath = ""{targetProgram}""
-objShell.Run pythonPath & "" "" & programPath, 0, False";
+
+' Check if Python executable exists
+If Not objFSO.FileExists(pythonPath) Then
+    MsgBox ""Python executable not found at: "" & pythonPath, vbCritical, ""{shortcutName} Error""
+    WScript.Quit 1
+End If
+
+' Check if program exists
+If Not objFSO.FileExists(objShell.CurrentDirectory & ""\\"" & programPath) Then
+    MsgBox ""Program not found: "" & programPath, vbCritical, ""{shortcutName} Error""
+    WScript.Quit 1
+End If
+
+' Run the Python program and wait for completion
+returnCode = objShell.Run(""""""""  & pythonPath & """""""" & "" "" & programPath, 0, True)
+
+' Check if there was an error
+If returnCode <> 0 Then
+    MsgBox ""The program exited with an error (code: "" & returnCode & "")"", vbExclamation, ""{shortcutName}""
+End If
+
+On Error Goto 0";
                 string vbsPath = Path.Combine(projectPath, $"run_{programName}.vbs");
                 
                 File.WriteAllText(vbsPath, vbsContent);

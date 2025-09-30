@@ -66,6 +66,6 @@ namespace PyWinInstall
         public bool AutoDetectPython { get; set; } = true;
         public bool CreateDesktopShortcut { get; set; } = true;
         public bool AddPythonToPath { get; set; } = true;
-        public string TargetProgram { get; set; } = "astrofiler.py";
+        public string TargetProgram { get; set; } = "main.py";
     }
 }
