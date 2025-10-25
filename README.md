@@ -1,5 +1,7 @@
 # PyWinInstall - Python Environment Installer
 
+![PyWinInstall Interface](pywininstall.jpg)
+
 A Windows WPF application that automates the installation of Python, cloning of Git repositories, and setting up Python virtual environments with package installation.
 
 ## Features

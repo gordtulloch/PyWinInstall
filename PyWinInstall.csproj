@@ -11,6 +11,7 @@
     <AssemblyDescription>Windows application to install Python, clone repositories, and run PowerShell scripts</AssemblyDescription>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
+    <ApplicationIcon>PyWinInstall.ico</ApplicationIcon>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <DebuggerSupport>false</DebuggerSupport>
